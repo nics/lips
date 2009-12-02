@@ -102,6 +102,7 @@ func (self *Lips) Init() *Lips {
         self.globals = Cons(Cons(self.Symbol("or"),      Fubr(fubr_or)),          self.globals);
         self.globals = Cons(Cons(self.Symbol("println"), Subr(subr_println)),     self.globals);
         self.globals = Cons(Cons(self.Symbol("print"),   Subr(subr_print)),       self.globals);
+        self.globals = Cons(Cons(self.Symbol("load"),    Subr(subr_load)),        self.globals);
         self.globals = Cons(self.special,                                         self.globals);
     });
     return self
@@ -209,9 +210,9 @@ func (self *Lips) pairList(expr Cell, args Cell, env Cell) (cell Cell, e os.Erro
         for ; expr != nil; expr, args = Cdr(expr), Cdr(args) {
             cell = Cons(Cons(Car(expr), Car(args)), cell)
         }
-    } else {
-        cell = Cons(Cons(expr, args), cell)
+        return
     }
+    cell = Cons(Cons(expr, args), cell);
     return
 }
 
@@ -607,6 +608,13 @@ func subr_print(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
         if Cdr(args) != nil {
             fmt.Print(" ")
         }
+    }
+    return
+}
+
+func subr_load(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
+    if path, e := asString(Car(args)); e == nil {
+        cell, e = lips.ReadFile(path)
     }
     return
 }
