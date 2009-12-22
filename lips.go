@@ -17,7 +17,7 @@ const (
     _CharsSymbol     = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!#$%&+*/:<=>?@\\^_|~.";
     _CharsNumber     = "0123456789";
     _CharsString     = "\"";
-    _CharsList       = "(";
+    _CharsList       = "([{";
     _CharsSemicolon  = ";";
     _CharsQuote      = "'";
     _CharsQuasiquote = "`";
@@ -695,6 +695,7 @@ func readString(self *LIPS, in *bufio.Reader, char byte) (cell Cell, e os.Error)
         escape = !escape && char == '\\';
         buffer.WriteByte(char)
     }
+    if e == os.EOF { e = NewError("Error: EOF in string.") }
     cell = String(buffer.String());
     return
 }
@@ -703,17 +704,37 @@ func readList(self *LIPS, in *bufio.Reader, char byte) (head Cell, e os.Error) {
     var tail Cell;
     var cell Cell;
     
+    var end byte;
+    switch char {
+    case '(':
+        end = ')'
+    case '[':
+        end = ']'
+    case '{':
+        end = '}'
+    }
+    
     head = Cons(nil, nil);
     tail = head;
     for char, e = skipBlanks(self, in); e == nil;
         char, e = skipBlanks(self, in) {
-        if char == ')' { break }
+        if char == end {
+            break
+        }
+        if char == ')' || char == ']' || char == '}' {
+            e = NewError("Error: unmatched parentheses.");
+            break
+        }
         if char == '.' {
-            if cell, e = self.ReadExpression(in); e == nil { Rplacd(tail, cell) }
+            if cell, e = self.ReadExpression(in); e == nil {
+                Rplacd(tail, cell)
+            }
         } else {
             in.UnreadByte();
             if cell, e = self.ReadExpression(in); e == nil {
                 tail = Rplacd(tail, Cons(cell, nil))
+            } else if e == os.EOF {
+                e = NewError("Error: EOF in list.")
             }
         }
     }
@@ -739,15 +760,25 @@ func readSemicolon(self *LIPS, in *bufio.Reader, char byte) (cell Cell, e os.Err
 }
 
 func readQuote(self *LIPS, in *bufio.Reader, char byte) (cell Cell, e os.Error) {
-    if cell, e = self.ReadExpression(in); e == nil {
-        cell = Cons(self.Symbol("quote"), Cons(cell, nil))
+    cell, e = self.ReadExpression(in);
+    switch e {
+    case os.EOF:
+        e = NewError("Error: EOF in quoted literal.")
+    case nil:
+        cell = Cons(cell, nil);
+        cell = Cons(self.Symbol("quote"), cell)
     }
     return
 }
 
 func readQuasiquote(self *LIPS, in *bufio.Reader, char byte) (cell Cell, e os.Error) {
-    if cell, e = self.ReadExpression(in); e == nil {
-        cell = Cons(self.Symbol("quasiquote"), Cons(cell, nil))
+    cell, e = self.ReadExpression(in);
+    switch e {
+    case os.EOF:
+        e = NewError("Error: EOF in quasiquoted literal.")
+    case nil:
+        cell = Cons(cell, nil);
+        cell = Cons(self.Symbol("quasiquote"), cell)
     }
     return
 }
@@ -755,10 +786,17 @@ func readQuasiquote(self *LIPS, in *bufio.Reader, char byte) (cell Cell, e os.Er
 func readUnquote(self *LIPS, in *bufio.Reader, char byte) (cell Cell, e os.Error) {
     if char, e = in.ReadByte(); e == nil {
         in.UnreadByte();
-        if char == '@' {
-            cell = Cons(self.Symbol("unquote-splicing"), Cons(cell, nil))
-        } else {
-            cell = Cons(self.Symbol("unquote"), Cons(cell, nil))
+        cell, e = self.ReadExpression(in);
+        switch e {
+        case os.EOF:
+            e = NewError("Error: EOF in quasiquoted literal.")
+        case nil:
+            cell = Cons(cell, nil);
+            if char == '@' {
+                cell = Cons(self.Symbol("unquote-splicing"), cell)
+            } else {
+                cell = Cons(self.Symbol("unquote"), cell)
+            }
         }
     }
     return
