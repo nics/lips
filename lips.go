@@ -1,8 +1,6 @@
-package main
+package lips
 
 import (
-    "once";
-    "flag";
     "os";
     "strings";
     "strconv";
@@ -27,88 +25,97 @@ const (
     _CharsSign       = "-";
 )
 
-// lips
+// errors
+
+type FatalError string;
+type Error      string;
+
+func (e FatalError) String() string { return string(e) }
+func (e Error)      String() string { return string(e) }
+
+func NewFatalError (s string) FatalError { return FatalError(s) }
+func NewError      (s string) Error      { return Error(s) }
+
+// interpreter
 
 type (
-    readersType [] func(*Lips, *bufio.Reader, byte) (Cell, os.Error);
-    symbolsType map[string] Cell;
+    _Readers [] func(*LIPS, *bufio.Reader, byte) (Cell, os.Error);
+    _Symbols map[string] Cell;
 )
 
-type Lips struct {
-    readers readersType;
-    symbols symbolsType;
-    globals Cell;
+type LIPS struct {
+    readers _Readers;
+    symbols _Symbols;
+    Globals Cell;
     special Cell;
-    nothing Cell;
+    Nothing Cell;
 }
 
-func LIPS() *Lips {
-    return new(Lips).Init();
-}
-
-func (self *Lips) Init() *Lips {
-    once.Do(func() {
-        self.readers = make(readersType, 256);
-        self.symbols = make(symbolsType);
-        self.special = Cons(self.Symbol("*syntax-table*"), nil);
-        self.nothing = Cons(nil, nil);
-        
-        for char, _ := range self.readers                    { self.readers[char] = readUnknown }
-        for _, char := range strings.Bytes(_CharsBlank)      { self.readers[char] = readBlank }
-        for _, char := range strings.Bytes(_CharsSymbol)     { self.readers[char] = readSymbol }
-        for _, char := range strings.Bytes(_CharsNumber)     { self.readers[char] = readNumber }
-        for _, char := range strings.Bytes(_CharsString)     { self.readers[char] = readString }
-        for _, char := range strings.Bytes(_CharsList)       { self.readers[char] = readList }
-        for _, char := range strings.Bytes(_CharsSemicolon)  { self.readers[char] = readSemicolon }
-        for _, char := range strings.Bytes(_CharsQuote)      { self.readers[char] = readQuote }
-        for _, char := range strings.Bytes(_CharsQuasiquote) { self.readers[char] = readQuasiquote }
-        for _, char := range strings.Bytes(_CharsUnquote)    { self.readers[char] = readUnquote }
-        for _, char := range strings.Bytes(_CharsSign)       { self.readers[char] = readSign }
-        
-        self.Symbol("quote");
-        self.Symbol("quasiquote");
-        self.Symbol("unquote");
-        self.Symbol("unquote-splicing");
-        
-        self.globals = Cons(Cons(self.Symbol("t"),       self.Symbol("t")),       self.globals);
-        self.globals = Cons(Cons(self.Symbol("define"),  Fubr(fubr_define)),      self.globals);
-        self.globals = Cons(Cons(self.Symbol("eval"),    Subr(subr_eval)),        self.globals);
-        self.globals = Cons(Cons(self.Symbol("apply"),   Subr(subr_apply)),       self.globals);
-        self.globals = Cons(Cons(self.Symbol("flambda"), Fubr(fubr_fxpr)),        self.globals);
-        self.globals = Cons(Cons(self.Symbol("lambda"),  Fubr(fubr_expr)),        self.globals);
-        self.globals = Cons(Cons(self.Symbol("cons"),    Subr(subr_cons)),        self.globals);
-        self.globals = Cons(Cons(self.Symbol("car"),     Subr(subr_car)),         self.globals);
-        self.globals = Cons(Cons(self.Symbol("cdr"),     Subr(subr_cdr)),         self.globals);
-        self.globals = Cons(Cons(self.Symbol("rplaca"),  Subr(subr_rplaca)),      self.globals);
-        self.globals = Cons(Cons(self.Symbol("rplacd"),  Subr(subr_rplacd)),      self.globals);
-        self.globals = Cons(Cons(self.Symbol("assq"),    Subr(subr_assq)),        self.globals);
-        self.globals = Cons(Cons(self.Symbol("setq"),    Fubr(fubr_setq)),        self.globals);
-        self.globals = Cons(Cons(self.Symbol("let"),     Fubr(fubr_let)),         self.globals);
-        self.globals = Cons(Cons(self.Symbol("while"),   Fubr(fubr_while)),       self.globals);
-        self.globals = Cons(Cons(self.Symbol("if"),      Fubr(fubr_if)),          self.globals);
-        self.globals = Cons(Cons(self.Symbol("map"),     Subr(subr_map)),         self.globals);
-        self.globals = Cons(Cons(self.Symbol("+"),       Subr(subr_add)),         self.globals);
-        self.globals = Cons(Cons(self.Symbol("-"),       Subr(subr_subtract)),    self.globals);
-        self.globals = Cons(Cons(self.Symbol("*"),       Subr(subr_multiply)),    self.globals);
-        self.globals = Cons(Cons(self.Symbol("/"),       Subr(subr_divide)),      self.globals);
-        self.globals = Cons(Cons(self.Symbol("%"),       Subr(subr_modulus)),     self.globals);
-        self.globals = Cons(Cons(self.Symbol("<"),       Subr(subr_less)),        self.globals);
-        self.globals = Cons(Cons(self.Symbol(">"),       Subr(subr_more)),        self.globals);
-        self.globals = Cons(Cons(self.Symbol("<="),      Subr(subr_lessOrEqual)), self.globals);
-        self.globals = Cons(Cons(self.Symbol(">="),      Subr(subr_moreOrEqual)), self.globals);
-        self.globals = Cons(Cons(self.Symbol("=="),      Subr(subr_equal)),       self.globals);
-        self.globals = Cons(Cons(self.Symbol("!="),      Subr(subr_notEqual)),    self.globals);
-        self.globals = Cons(Cons(self.Symbol("and"),     Fubr(fubr_and)),         self.globals);
-        self.globals = Cons(Cons(self.Symbol("or"),      Fubr(fubr_or)),          self.globals);
-        self.globals = Cons(Cons(self.Symbol("println"), Subr(subr_println)),     self.globals);
-        self.globals = Cons(Cons(self.Symbol("print"),   Subr(subr_print)),       self.globals);
-        self.globals = Cons(Cons(self.Symbol("load"),    Subr(subr_load)),        self.globals);
-        self.globals = Cons(self.special,                                         self.globals);
-    });
+func NewLIPS() *LIPS {
+    self := new(LIPS);
+    
+    self.readers = make(_Readers, 256);
+    self.symbols = make(_Symbols);
+    self.special = Cons(self.Symbol("*syntax-table*"), nil);
+    self.Nothing = Cons(nil, nil);
+    
+    for char, _ := range self.readers                    { self.readers[char] = readUnknown }
+    for _, char := range strings.Bytes(_CharsBlank)      { self.readers[char] = readBlank }
+    for _, char := range strings.Bytes(_CharsSymbol)     { self.readers[char] = readSymbol }
+    for _, char := range strings.Bytes(_CharsNumber)     { self.readers[char] = readNumber }
+    for _, char := range strings.Bytes(_CharsString)     { self.readers[char] = readString }
+    for _, char := range strings.Bytes(_CharsList)       { self.readers[char] = readList }
+    for _, char := range strings.Bytes(_CharsSemicolon)  { self.readers[char] = readSemicolon }
+    for _, char := range strings.Bytes(_CharsQuote)      { self.readers[char] = readQuote }
+    for _, char := range strings.Bytes(_CharsQuasiquote) { self.readers[char] = readQuasiquote }
+    for _, char := range strings.Bytes(_CharsUnquote)    { self.readers[char] = readUnquote }
+    for _, char := range strings.Bytes(_CharsSign)       { self.readers[char] = readSign }
+    
+    self.Symbol("quote");
+    self.Symbol("quasiquote");
+    self.Symbol("unquote");
+    self.Symbol("unquote-splicing");
+    
+    self.Globals = Cons(Cons(self.Symbol("t"),       self.Symbol("t")),       self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("define"),  Fubr(fubr_define)),      self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("eval"),    Subr(subr_eval)),        self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("apply"),   Subr(subr_apply)),       self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("flambda"), Fubr(fubr_fxpr)),        self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("lambda"),  Fubr(fubr_expr)),        self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("cons"),    Subr(subr_cons)),        self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("car"),     Subr(subr_car)),         self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("cdr"),     Subr(subr_cdr)),         self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("rplaca"),  Subr(subr_rplaca)),      self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("rplacd"),  Subr(subr_rplacd)),      self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("assq"),    Subr(subr_assq)),        self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("setq"),    Fubr(fubr_setq)),        self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("let"),     Fubr(fubr_let)),         self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("while"),   Fubr(fubr_while)),       self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("if"),      Fubr(fubr_if)),          self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("map"),     Subr(subr_map)),         self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("+"),       Subr(subr_add)),         self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("-"),       Subr(subr_subtract)),    self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("*"),       Subr(subr_multiply)),    self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("/"),       Subr(subr_divide)),      self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("%"),       Subr(subr_modulus)),     self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("<"),       Subr(subr_less)),        self.Globals);
+    self.Globals = Cons(Cons(self.Symbol(">"),       Subr(subr_more)),        self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("<="),      Subr(subr_lessOrEqual)), self.Globals);
+    self.Globals = Cons(Cons(self.Symbol(">="),      Subr(subr_moreOrEqual)), self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("=="),      Subr(subr_equal)),       self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("!="),      Subr(subr_notEqual)),    self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("and"),     Fubr(fubr_and)),         self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("or"),      Fubr(fubr_or)),          self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("println"), Subr(subr_println)),     self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("print"),   Subr(subr_print)),       self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("load"),    Subr(subr_load)),        self.Globals);
+    self.Globals = Cons(Cons(self.Symbol("exit"),    Subr(subr_exit)),        self.Globals);
+    self.Globals = Cons(self.special,                                         self.Globals);
+    
     return self
 }
 
-func (self *Lips) Symbol(name string) Cell {
+func (self *LIPS) Symbol(name string) Cell {
     cell, is := self.symbols[name];
     if !is {
         cell = Symbol(name); self.symbols[name] = cell
@@ -116,48 +123,44 @@ func (self *Lips) Symbol(name string) Cell {
     return cell
 }
 
-func (self *Lips) ReadFile(path string) (cell Cell, e os.Error) {
-    if file, e := os.Open(path, 0, 0); file != nil {
+func (self *LIPS) ReadFile(path string) (cell Cell, e os.Error) {
+    file, e := os.Open(path, 0, 0);
+    if file != nil {
         cell, e = self.Read(file);
         file.Close()
-    } else {
-        fmt.Fprintln(os.Stderr, e);
-        os.Exit(1)
     }
     return
 }
 
-func (self *Lips) Read(r io.Reader) (cell Cell, e os.Error) {
+func (self *LIPS) Read(r io.Reader) (cell Cell, e os.Error) {
     in := bufio.NewReader(r);
     
     var expr Cell;
-    for expr, e = self.readExpression(in); e == nil; 
-        expr, e = self.readExpression(in) {
-        _, e = self.Eval(expr, self.globals);
+    for expr, e = self.ReadExpression(in); e == nil;
+        expr, e = self.ReadExpression(in) {
+        cell, e = self.Eval(expr, self.Globals);
     }
-    if e != os.EOF {
-        fmt.Fprintln(os.Stderr, e);
-    }
+    if e == os.EOF { e = nil }
     return
 }
 
-func (self *Lips) readExpression(in *bufio.Reader) (cell Cell, e os.Error) {
+func (self *LIPS) ReadExpression(in *bufio.Reader) (cell Cell, e os.Error) {
     var char byte;
     for e == nil && cell == nil {
         if char, e = skipBlanks(self, in); e == nil {
-            if cell, e = self.readers[char](self, in, char); cell == self.nothing { cell = nil; break }
+            if cell, e = self.readers[char](self, in, char); cell == self.Nothing { cell = nil; break }
         }
     }
     return
 }
 
-func (self *Lips) Eval(expr Cell, env Cell) (cell Cell, e os.Error) {
+func (self *LIPS) Eval(expr Cell, env Cell) (cell Cell, e os.Error) {
     switch t := expr.(type) {
     case *TypeString, *TypeNumber, *TypeExpr, *TypeSubr, *TypeFubr:
         cell = expr
     case *TypeSymbol:
         if cell = Assq(expr, env); cell == nil {
-            e = os.NewError(fmt.Sprintf("Error: undefined %s.", Sexp(expr)))
+            e = NewError(fmt.Sprintf("Error: undefined %s.", Sexp(expr)))
         }
         cell = Cdr(cell)
     case *TypeCons:
@@ -167,7 +170,7 @@ func (self *Lips) Eval(expr Cell, env Cell) (cell Cell, e os.Error) {
     return
 }
 
-func (self *Lips) Apply(fun, args Cell, env Cell) (cell Cell, e os.Error) {
+func (self *LIPS) Apply(fun, args Cell, env Cell) (cell Cell, e os.Error) {
     switch t := fun.(type) {
     case *TypeFubr:
         cell, e = fun.(*TypeFubr).ptr(self, args, env)
@@ -182,12 +185,12 @@ func (self *Lips) Apply(fun, args Cell, env Cell) (cell Cell, e os.Error) {
         cell, e = self.pairList(Car(fun.(*TypeExpr).one), cell, fun.(*TypeExpr).two);
         cell, e = self.evalList(Cdr(fun.(*TypeExpr).one), cell)
     default:
-        e = os.NewError(fmt.Sprintf("Error: cannot apply %s.", Sexp(fun)))
+        e = NewError(fmt.Sprintf("Error: cannot apply %s.", Sexp(fun)))
     }
     return
 }
 
-func (self *Lips) evalArgs(args Cell, env Cell) (cell Cell, e os.Error) {
+func (self *LIPS) evalArgs(args Cell, env Cell) (cell Cell, e os.Error) {
     if args == nil {
         return
     }
@@ -197,14 +200,14 @@ func (self *Lips) evalArgs(args Cell, env Cell) (cell Cell, e os.Error) {
     return
 }
 
-func (self *Lips) evalList(expr Cell, env Cell) (cell Cell, e os.Error) {
+func (self *LIPS) evalList(expr Cell, env Cell) (cell Cell, e os.Error) {
     for ; expr != nil; expr = Cdr(expr) {
         cell, e = self.Eval(Car(expr), env)
     }
     return
 }
 
-func (self *Lips) pairList(expr Cell, args Cell, env Cell) (cell Cell, e os.Error) {
+func (self *LIPS) pairList(expr Cell, args Cell, env Cell) (cell Cell, e os.Error) {
     cell = env;
     if _, is := expr.(*TypeCons); is {
         for ; expr != nil; expr, args = Cdr(expr), Cdr(args) {
@@ -230,7 +233,7 @@ type (
     TypeSubr   struct { ptr Func };
     TypeCons   Pair;
     
-    Func func(*Lips, Cell, Cell) (Cell, os.Error);
+    Func func(*LIPS, Cell, Cell) (Cell, os.Error);
     
     Pair struct {
         one Cell;
@@ -272,15 +275,16 @@ func asString(cell Cell) (s string, e os.Error) {
     if cast, is := cell.(*TypeString); is {
         s = string(*cast)
     } else {
-        e = os.NewError(fmt.Sprintf("Error: %s is not a string", Sexp(cell)))
+        e = NewError(fmt.Sprintf("Error: %s is not a string", Sexp(cell)))
     }
     return
 } 
+
 func asInt(cell Cell) (i int, e os.Error) {
     if cast, is := cell.(*TypeNumber); is {
         i = int(*cast)
     } else {
-        e = os.NewError(fmt.Sprintf("Error: %s is not a number", Sexp(cell)))
+        e = NewError(fmt.Sprintf("Error: %s is not a number", Sexp(cell)))
     }
     return
 } 
@@ -338,18 +342,18 @@ func Assq(cell Cell, list Cell) Cell {
 
 // builtin
 
-func fubr_define(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
+func fubr_define(lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) {
     if args == nil {
         return
     }
     cell = Cons(Car(args), nil);
-    Rplacd(lips.globals, Cons(cell, Cdr(lips.globals)));
+    Rplacd(lips.Globals, Cons(cell, Cdr(lips.Globals)));
     expr, e := lips.Eval(Cadr(args), env);
     cell = Rplacd(cell, expr);
     return
 }
 
-func subr_eval(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
+func subr_eval(lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) {
     if evalEnv := Cadr(args); evalEnv != nil {
         cell, e = lips.Eval(Car(args), evalEnv)
     } else {
@@ -358,25 +362,25 @@ func subr_eval(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
     return
 }
 
-func subr_apply(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
+func subr_apply(lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) {
     cell, e = lips.Apply(Car(args), Cdr(args), env);
     return
 }
 
-func fubr_setq(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
+func fubr_setq(lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) {
     key := Car(args);
     if _, is := key.(*TypeSymbol); is {
         cell, e = lips.Eval(Cadr(args), env);
         if tmp := Assq(key, env); tmp != nil {
             Rplacd(tmp, cell)
         } else {
-            e = os.NewError(fmt.Sprintf("Error: undefined %s.", Sexp(key)))
+            e = NewError(fmt.Sprintf("Error: undefined %s.", Sexp(key)))
         }
     }
     return
 }
 
-func fubr_let(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
+func fubr_let(lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) {
     var tmp Cell;
     for cell = Car(args); cell != nil; cell = Cdr(cell) {
       tmp, e = lips.Eval(Cadar(cell), env);
@@ -387,7 +391,7 @@ func fubr_let(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
     return
 }
 
-func fubr_while(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
+func fubr_while(lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) {
     var expr Cell;
     for expr, e = lips.Eval(Car(args), env); expr != nil; 
         expr, e = lips.Eval(Car(args), env) {
@@ -396,7 +400,7 @@ func fubr_while(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
     return
 }
 
-func fubr_if(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
+func fubr_if(lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) {
     var expr Cell;
     if expr, e = lips.Eval(Car(args), env); expr != nil {
         cell, e = lips.Eval( Cadr(args), env)
@@ -406,7 +410,7 @@ func fubr_if(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
     return
 }
 
-func subr_map(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
+func subr_map(lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) {
     head := Cons(nil, nil);
     tail := head;
     expr := Car(args);
@@ -428,16 +432,16 @@ func mapArgs(args Cell) Cell {
     return nil
 }
 
-func fubr_fxpr   (lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) { cell = Fxpr(args, env); return }
-func fubr_expr   (lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) { cell = Expr(args, env); return }
-func subr_cons   (lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) { cell = Cons(Car(args), Cadr(args)); return }
-func subr_car    (lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) { cell = Caar(args); return }
-func subr_cdr    (lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) { cell = Cdar(args); return }
-func subr_rplaca (lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) { cell = Rplaca(Car(args), Cadr(args)); return }
-func subr_rplacd (lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) { cell = Rplacd(Car(args), Cadr(args)); return }
-func subr_assq   (lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) { cell = Assq(Car(args), Cadr(args)); return }
+func fubr_fxpr   (lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) { cell = Fxpr(args, env); return }
+func fubr_expr   (lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) { cell = Expr(args, env); return }
+func subr_cons   (lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) { cell = Cons(Car(args), Cadr(args)); return }
+func subr_car    (lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) { cell = Caar(args); return }
+func subr_cdr    (lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) { cell = Cdar(args); return }
+func subr_rplaca (lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) { cell = Rplaca(Car(args), Cadr(args)); return }
+func subr_rplacd (lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) { cell = Rplacd(Car(args), Cadr(args)); return }
+func subr_assq   (lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) { cell = Assq(Car(args), Cadr(args)); return }
 
-func subr_add(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
+func subr_add(lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) {
     number, e := asInt(Car(args));
     var n int;
     for args = Cdr(args); e == nil && args != nil; args = Cdr(args) {
@@ -448,7 +452,7 @@ func subr_add(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
     return
 }
 
-func subr_subtract(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
+func subr_subtract(lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) {
     number, e := asInt(Car(args));
     if Cdr(args) != nil {
         var n int;
@@ -456,14 +460,14 @@ func subr_subtract(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
             n, e = asInt(Car(args));
             number -= n
         }
-        cell = Number(number);
-        return
+    } else {
+        number = 0 - number
     }
-    cell = Number(0 - number);
+    cell = Number(number);
     return
 }
 
-func subr_multiply(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
+func subr_multiply(lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) {
     number, e := asInt(Car(args));
     var n int;
     for args = Cdr(args); e == nil && args != nil; args = Cdr(args) {
@@ -474,7 +478,7 @@ func subr_multiply(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
     return
 }
 
-func subr_divide(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
+func subr_divide(lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) {
     number, e := asInt(Car(args));
     if Cdr(args) != nil {
         var n int;
@@ -482,14 +486,14 @@ func subr_divide(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
             n, e = asInt(Car(args));
             number /= n
         }
-        cell = Number(number);
-        return
+    } else {
+        number = 1 / number
     }
-    cell = Number(1 / number);
+    cell = Number(number);
     return
 }
 
-func subr_modulus(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
+func subr_modulus(lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) {
     number, e := asInt(Car(args));
     if Cdr(args) != nil {
         var n int;
@@ -497,14 +501,14 @@ func subr_modulus(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
             n, e = asInt(Car(args));
             number %= n
         }
-        cell = Number(number);
-        return
+    } else {
+        number = 1 % number
     }
-    cell = Number(1 % number);
+    cell = Number(number);
     return
 }
 
-func subr_less(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
+func subr_less(lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) {
     for ; Cdr(args) != nil; args = Cdr(args) {
         n1, e := asInt( Car(args));
         n2, e := asInt(Cadr(args));
@@ -516,7 +520,7 @@ func subr_less(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
     return
 }
 
-func subr_more(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
+func subr_more(lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) {
     for ; Cdr(args) != nil; args = Cdr(args) {
         n1, e := asInt( Car(args));
         n2, e := asInt(Cadr(args));
@@ -528,7 +532,7 @@ func subr_more(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
     return
 }
 
-func subr_lessOrEqual(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
+func subr_lessOrEqual(lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) {
     for ; Cdr(args) != nil; args = Cdr(args) {
         n1, e := asInt( Car(args));
         n2, e := asInt(Cadr(args));
@@ -540,7 +544,7 @@ func subr_lessOrEqual(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
     return
 }
 
-func subr_moreOrEqual(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
+func subr_moreOrEqual(lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) {
     for ; Cdr(args) != nil; args = Cdr(args) {
         n1, e := asInt( Car(args));
         n2, e := asInt(Cadr(args));
@@ -552,11 +556,11 @@ func subr_moreOrEqual(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
     return
 }
 
-func subr_equal(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
+func subr_equal(lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) {
     for ; Cdr(args) != nil; args = Cdr(args) {
         n1, e := asInt( Car(args));
         n2, e := asInt(Cadr(args));
-        if e != nil || !(n1 == n2) {
+        if e != nil || n1 != n2 {
             return
         }
     }
@@ -564,11 +568,11 @@ func subr_equal(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
     return
 }
 
-func subr_notEqual(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
+func subr_notEqual(lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) {
     for ; Cdr(args) != nil; args = Cdr(args) {
         n1, e := asInt( Car(args));
         n2, e := asInt(Cadr(args));
-        if e != nil || !(n1 != n2) {
+        if e != nil || n1 == n2 {
             return
         }
     }
@@ -576,7 +580,7 @@ func subr_notEqual(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
     return
 }
 
-func fubr_and(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
+func fubr_and(lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) {
     cell = lips.Symbol("t");
     for ; args != nil && cell != nil; args = Cdr(args) {
         cell, e = lips.Eval(Car(args), env)
@@ -584,14 +588,14 @@ func fubr_and(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
     return
 }
 
-func fubr_or(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
+func fubr_or(lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) {
     for ; args != nil && cell == nil; args = Cdr(args) {
         cell, e = lips.Eval(Car(args), env)
     }
     return
 }
 
-func subr_println(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
+func subr_println(lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) {
     for ; args != nil; args = Cdr(args) {
         fmt.Print(Sexp(Car(args)));
         if Cdr(args) != nil {
@@ -602,7 +606,7 @@ func subr_println(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
     return
 }
 
-func subr_print(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
+func subr_print(lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) {
     for ; args != nil; args = Cdr(args) {
         fmt.Print(Sexp(Car(args)));
         if Cdr(args) != nil {
@@ -612,38 +616,50 @@ func subr_print(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
     return
 }
 
-func subr_load(lips *Lips, args Cell, env Cell) (cell Cell, e os.Error) {
+func subr_load(lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) {
     if path, e := asString(Car(args)); e == nil {
         cell, e = lips.ReadFile(path)
     }
     return
 }
 
+func subr_exit(lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) {
+    if cell = Car(args); cell != nil {
+        if code, e := asInt(cell); e == nil {
+            os.Exit(code)
+        }
+    } else {
+        os.Exit(0)
+    }
+    return
+}
+
 // readers
 
-func skipBlanks(self *Lips, in *bufio.Reader) (char byte, e os.Error) {
+func skipBlanks(self *LIPS, in *bufio.Reader) (char byte, e os.Error) {
     for char, e = in.ReadByte(); e == nil && charReadsBlank(self, char);
         char, e = in.ReadByte() {  }
     return
 }
 
-func charReadsUnknown    (self *Lips, char byte) bool { return self.readers[char] == readUnknown }
-func charReadsBlank      (self *Lips, char byte) bool { return self.readers[char] == readBlank }
-func charReadsSymbol     (self *Lips, char byte) bool { return self.readers[char] == readSymbol }
-func charReadsNumber     (self *Lips, char byte) bool { return self.readers[char] == readNumber }
-func charReadsString     (self *Lips, char byte) bool { return self.readers[char] == readString }
-func charReadsList       (self *Lips, char byte) bool { return self.readers[char] == readList }
-func charReadsSemicolon  (self *Lips, char byte) bool { return self.readers[char] == readSemicolon }
-func charReadsQuote      (self *Lips, char byte) bool { return self.readers[char] == readQuote }
-func charReadsQuasiquote (self *Lips, char byte) bool { return self.readers[char] == readQuasiquote }
-func charReadsUnquote    (self *Lips, char byte) bool { return self.readers[char] == readUnquote }
-func charReadsSign       (self *Lips, char byte) bool { return self.readers[char] == readSign }
+func charReadsUnknown    (self *LIPS, char byte) bool { return self.readers[char] == readUnknown }
+func charReadsBlank      (self *LIPS, char byte) bool { return self.readers[char] == readBlank }
+func charReadsSymbol     (self *LIPS, char byte) bool { return self.readers[char] == readSymbol }
+func charReadsNumber     (self *LIPS, char byte) bool { return self.readers[char] == readNumber }
+func charReadsString     (self *LIPS, char byte) bool { return self.readers[char] == readString }
+func charReadsList       (self *LIPS, char byte) bool { return self.readers[char] == readList }
+func charReadsSemicolon  (self *LIPS, char byte) bool { return self.readers[char] == readSemicolon }
+func charReadsQuote      (self *LIPS, char byte) bool { return self.readers[char] == readQuote }
+func charReadsQuasiquote (self *LIPS, char byte) bool { return self.readers[char] == readQuasiquote }
+func charReadsUnquote    (self *LIPS, char byte) bool { return self.readers[char] == readUnquote }
+func charReadsSign       (self *LIPS, char byte) bool { return self.readers[char] == readSign }
 
-func readUnknown(self *Lips, in *bufio.Reader, char byte) (cell Cell, e os.Error) {
+func readUnknown(self *LIPS, in *bufio.Reader, char byte) (cell Cell, e os.Error) {
+    e = NewError(fmt.Sprintf("Error: illegal character %c.", char));
     return
 }
 
-func readSymbol(self *Lips, in *bufio.Reader, char byte) (cell Cell, e os.Error) {
+func readSymbol(self *LIPS, in *bufio.Reader, char byte) (cell Cell, e os.Error) {
     buffer := bytes.NewBuffer(nil);
     buffer.WriteByte(char);
     for char, e = in.ReadByte(); e == nil && (charReadsSymbol(self, char) ||
@@ -656,7 +672,7 @@ func readSymbol(self *Lips, in *bufio.Reader, char byte) (cell Cell, e os.Error)
     return
 }
 
-func readNumber(self *Lips, in *bufio.Reader, char byte) (cell Cell, e os.Error) {
+func readNumber(self *LIPS, in *bufio.Reader, char byte) (cell Cell, e os.Error) {
     buffer := bytes.NewBuffer(nil);
     buffer.WriteByte(char);
     for char, e = in.ReadByte(); e == nil && charReadsNumber(self, char);
@@ -670,7 +686,7 @@ func readNumber(self *Lips, in *bufio.Reader, char byte) (cell Cell, e os.Error)
     return
 }
 
-func readString(self *Lips, in *bufio.Reader, char byte) (cell Cell, e os.Error) {
+func readString(self *LIPS, in *bufio.Reader, char byte) (cell Cell, e os.Error) {
     buffer := bytes.NewBuffer(nil);
     ending := char;
     escape := false;
@@ -683,7 +699,7 @@ func readString(self *Lips, in *bufio.Reader, char byte) (cell Cell, e os.Error)
     return
 }
 
-func readList(self *Lips, in *bufio.Reader, char byte) (head Cell, e os.Error) {
+func readList(self *LIPS, in *bufio.Reader, char byte) (head Cell, e os.Error) {
     var tail Cell;
     var cell Cell;
     
@@ -693,10 +709,10 @@ func readList(self *Lips, in *bufio.Reader, char byte) (head Cell, e os.Error) {
         char, e = skipBlanks(self, in) {
         if char == ')' { break }
         if char == '.' {
-            if cell, e = self.readExpression(in); e == nil { Rplacd(tail, cell) }
+            if cell, e = self.ReadExpression(in); e == nil { Rplacd(tail, cell) }
         } else {
             in.UnreadByte();
-            if cell, e = self.readExpression(in); e == nil {
+            if cell, e = self.ReadExpression(in); e == nil {
                 tail = Rplacd(tail, Cons(cell, nil))
             }
         }
@@ -704,39 +720,39 @@ func readList(self *Lips, in *bufio.Reader, char byte) (head Cell, e os.Error) {
     head = Cdr(head);
     if _, is := Car(head).(*TypeSymbol); is {
         if expr := Assq(Car(head), Cdr(self.special)); expr != nil {
-            head, e = self.Apply(Cdr(expr), Cdr(head), self.globals)
+            head, e = self.Apply(Cdr(expr), Cdr(head), self.Globals)
         }
         if head == nil {
             return
         }
     }
     if head == nil {
-        head = self.nothing
+        head = self.Nothing
     }
     return
 }
 
-func readSemicolon(self *Lips, in *bufio.Reader, char byte) (cell Cell, e os.Error) {
+func readSemicolon(self *LIPS, in *bufio.Reader, char byte) (cell Cell, e os.Error) {
     for char, e = in.ReadByte(); e == nil && (char != '\n') && (char != '\r');
         char, e = in.ReadByte() {  }
     return
 }
 
-func readQuote(self *Lips, in *bufio.Reader, char byte) (cell Cell, e os.Error) {
-    if cell, e = self.readExpression(in); e == nil {
+func readQuote(self *LIPS, in *bufio.Reader, char byte) (cell Cell, e os.Error) {
+    if cell, e = self.ReadExpression(in); e == nil {
         cell = Cons(self.Symbol("quote"), Cons(cell, nil))
     }
     return
 }
 
-func readQuasiquote(self *Lips, in *bufio.Reader, char byte) (cell Cell, e os.Error) {
-    if cell, e = self.readExpression(in); e == nil {
+func readQuasiquote(self *LIPS, in *bufio.Reader, char byte) (cell Cell, e os.Error) {
+    if cell, e = self.ReadExpression(in); e == nil {
         cell = Cons(self.Symbol("quasiquote"), Cons(cell, nil))
     }
     return
 }
 
-func readUnquote(self *Lips, in *bufio.Reader, char byte) (cell Cell, e os.Error) {
+func readUnquote(self *LIPS, in *bufio.Reader, char byte) (cell Cell, e os.Error) {
     if char, e = in.ReadByte(); e == nil {
         in.UnreadByte();
         if char == '@' {
@@ -748,7 +764,7 @@ func readUnquote(self *Lips, in *bufio.Reader, char byte) (cell Cell, e os.Error
     return
 }
 
-func readSign(self *Lips, in *bufio.Reader, char byte) (cell Cell, e os.Error) {
+func readSign(self *LIPS, in *bufio.Reader, char byte) (cell Cell, e os.Error) {
     sign := char;
     if char, e = in.ReadByte(); e == nil {
         in.UnreadByte();
@@ -761,41 +777,6 @@ func readSign(self *Lips, in *bufio.Reader, char byte) (cell Cell, e os.Error) {
     return
 }
 
-func readBlank(self *Lips, in *bufio.Reader, char byte) (cell Cell, e os.Error) {
+func readBlank(self *LIPS, in *bufio.Reader, char byte) (cell Cell, e os.Error) {
     return
-}
-
-// repl, main
-
-func repl(lips *Lips) (cell Cell, e os.Error) {
-    in := bufio.NewReader(os.Stdin);
-    
-    fmt.Println("Welcome to LIPS, a misspelled LISP.");
-    var expr Cell;
-    for {
-        if expr, e = lips.readExpression(in); e == nil {
-            if cell, e = lips.Eval(expr, lips.globals); e == nil {
-                fmt.Println("=> " + Sexp(cell));
-                continue
-            }
-        }
-        break
-    }
-    if e != os.EOF {
-        fmt.Fprintln(os.Stderr, e);
-    }
-    return
-}
-
-func main() {
-    lips := LIPS();
-    lips.ReadFile("lips.lisp");
-    
-    flag.Parse();
-    switch len(flag.Args()) {
-    case 0: 
-        repl(lips)
-    case 1:
-        lips.ReadFile(flag.Arg(0))
-    }
 }
