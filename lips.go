@@ -48,7 +48,7 @@ type LIPS struct {
     symbols _Symbols;
     Globals Cell;
     special Cell;
-    Nothing Cell;
+    nothing Cell;
 }
 
 func NewLIPS() *LIPS {
@@ -57,7 +57,7 @@ func NewLIPS() *LIPS {
     self.readers = make(_Readers, 256);
     self.symbols = make(_Symbols);
     self.special = Cons(self.Symbol("*syntax-table*"), nil);
-    self.Nothing = Cons(nil, nil);
+    self.nothing = Cons(nil, nil);
     
     for char, _ := range self.readers                    { self.readers[char] = readUnknown }
     for _, char := range strings.Bytes(_CharsBlank)      { self.readers[char] = readBlank }
@@ -148,7 +148,7 @@ func (self *LIPS) ReadExpression(in *bufio.Reader) (cell Cell, e os.Error) {
     var char byte;
     for e == nil && cell == nil {
         if char, e = skipBlanks(self, in); e == nil {
-            if cell, e = self.readers[char](self, in, char); cell == self.Nothing { cell = nil; break }
+            if cell, e = self.readers[char](self, in, char); cell == self.nothing { cell = nil; break }
         }
     }
     return
@@ -748,7 +748,7 @@ func readList(self *LIPS, in *bufio.Reader, char byte) (head Cell, e os.Error) {
         }
     }
     if head == nil {
-        head = self.Nothing
+        head = self.nothing
     }
     return
 }
