@@ -624,12 +624,12 @@ func subr_load(lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) {
 }
 
 func subr_exit(lips *LIPS, args Cell, env Cell) (cell Cell, e os.Error) {
+    c := 0;
     if cell = Car(args); cell != nil {
-        if code, e := asInt(cell); e == nil {
-            os.Exit(code)
-        }
-    } else {
-        os.Exit(0)
+        c, e = asInt(cell)
+    }
+    if e == nil {
+        os.Exit(c)
     }
     return
 }
