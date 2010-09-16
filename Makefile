@@ -1,6 +1,6 @@
 # prerequisite: GOROOT and GOARCH must be defined
 
-include $(GOROOT)/src/Make.$(GOARCH)
+include $(GOROOT)/src/Make.inc
 
 TARG=lips
 
