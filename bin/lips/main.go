@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
-	. "lips"
+	. "github.com/nics/lips"
 	"os"
 )
 
